@@ -214,7 +214,7 @@ icmp_packet_t *process_icmp(ip_packet_t *ip){
 
     icmp_frame->ip.ip_hdr.identification = ntohs(icmp_frame->ip.ip_hdr.identification);
     icmp_frame->ip.ip_hdr.header_checksum = ntohs(icmp_frame->ip.ip_hdr.header_checksum);
-    icmp_frame->icmp_hdr.checksum = ntohs(icmp_frame->icmp_hdr.checksum );
+    icmp_frame->icmp_hdr.checksum = ntohs(icmp_frame->icmp_hdr.checksum);
 
     return icmp_frame;
 }
