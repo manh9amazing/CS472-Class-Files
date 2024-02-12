@@ -73,6 +73,8 @@ static void init_header(cs472_proto_header_t *header, int req_cmd, char *reqData
     header->cmd = req_cmd;
 
     //TODO: Setup other header fields, eg., header->ver, header->dir, header->atm, header->ay
+    header->ver = PROTO_VER_1;
+    header->dir = DIR_SEND;
 
     //switch based on the command
     switch(req_cmd){
@@ -85,6 +87,8 @@ static void init_header(cs472_proto_header_t *header, int req_cmd, char *reqData
         case CMD_CLASS_INFO:
             strncpy(header->course, reqData, sizeof(header->course));
             header->len = sizeof(cs472_proto_header_t);
+            header->atm = TERM_FALL;
+            header->ay = 2022;
             break;
     }
 }
@@ -127,11 +131,11 @@ static void start_client(cs472_proto_header_t *header, uint8_t *packet){
      * if you are sending over a real network - try it out
      */
     addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = inet_addr("127.0.0.1");
+    addr.sin_addr.s_addr = inet_addr("127.0.0.1"); 
     addr.sin_port = htons(PORT_NUM);
-
+    // Note: to test on tux, find ip of server first then replace 127.0.0.1 with that ip
     /*
-     * TODO:  The next things you need to do is to handle the cleint
+     * TODO:  The next things you need to do is to handle the client
      * socket to send things to the server, basically make the following
      * calls:
      * 
@@ -139,6 +143,27 @@ static void start_client(cs472_proto_header_t *header, uint8_t *packet){
      *      send() - recall that the formatted packet is passed in
      *      recv() - get the response back from the server
      */
+
+    ret = connect(data_socket, (struct sockaddr *) &addr, sizeof(struct sockaddr_in));
+    if (ret == -1) {
+        perror("connect");
+        close(data_socket);
+        exit(EXIT_FAILURE);
+    }
+
+    ret = send(data_socket, packet, header->len, 0);
+    if (ret == -1) {
+        perror("send");
+        close(data_socket);
+        exit(EXIT_FAILURE);
+    }
+    
+    ret = recv(data_socket, recv_buffer, sizeof(recv_buffer), 0);
+    if (ret == -1) {
+        perror("recv");
+        close(data_socket);
+        exit(EXIT_FAILURE);
+    }
 
     //Now process what the server sent, here is some helper code
     cs472_proto_header_t *pcktPointer =  (cs472_proto_header_t *)recv_buffer;
