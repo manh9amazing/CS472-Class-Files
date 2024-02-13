@@ -1,0 +1,82 @@
+Written Assignment HW2
+Mike Nguyen - mpn47
+CS-472-002 - WI 23-24
+
+This design outlines the extension of the Class Information Protocol to support a Course Registration Protocol, enabling the handling of course registration requests with added functionality. The protocol stack is as follows:
+
++--------------------------------------+
+|    COURSE REGISTRATION PROTOCOL      |
++--------------------------------------+
+|     CLASS INFORMATION PROTOCOL       |
++--------------------------------------+
+
+1. PDU Structure:
+
+Class Information Protocol Layer (Lower Layer):
+
+The Class Information Protocol PDU is extended to incorporate details essential for course registration, including section IDs, descriptions, prerequisites, term and academic year availability, instructors, schedules, and seat availability. This extension facilitates richer data exchange necessary for course registration functionalities.
+
+ 0                   1                   2                   3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+| PROTO |  VER  |  CMD  |DIR|ATM|     AY: Academic Year         |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|             CC1: Course Code (First 4 Chars)                  |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|       CC2: Course Code (Last 3 Chars)         |LEN: Msg Length|
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|                     MSG: Message Data*                        |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|    SEC_ID: Section ID  | INST: Instructor  | SEATS: Available |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|      TERM: Availability for Terms  | PRE-REQ: Prerequisites   |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|                 SCHEDULE: Course Schedule*                    |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+Course Registration Protocol Layer (Upper Layer):
+
+This layer specifically addresses the registration aspects, including student ID, section selection, override requests, and prerequisite validation. It leverages the extended Class Information Protocol to ensure all necessary data is available for processing registration requests.
+
+ 0                   1                   2                   3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+| PROTO |  VER  |  CMD  |DIR|ATM|     AY: Academic Year         |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|             CC1: Course Code (First 4 Chars)                  |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|       CC2: Course Code (Last 3 Chars)         |LEN: Msg Length|
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|                     MSG: Message Data*                        |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|      SECTION: Section ID (if applicable)    | STID: Student ID|
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|  OVERRIDE: Override Request Flag  | PREREQ: Prerequisite Info |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+2. Reuse of Class Information Protocol:
+
+The Class Information Protocol is reused with modifications to support the extended needs of the Course Registration Protocol. This decision was made to leverage existing functionalities for class information retrieval while adding specific capabilities for course registration, such as handling of sections, prerequisites, and seat allocations.
+
+3. Managing Requests and Responses via the PDU:
+
+Requests for course registration are initiated by the client with a Course Registration Request PDU containing the course code, section, student ID, and, if necessary, an override request flag. The server processes this request by first validating the prerequisites using the extended fields in the Class Information Protocol PDU, then checking seat availability and handling override requests as needed.
+
+Responses are crafted to include the success or failure of the registration attempt, with detailed error messages for issues like full classes or unmet prerequisites. The Course Registration Protocol PDU is used to encapsulate this response, leveraging the extended Class Information Protocol PDU for detailed course information.
+
+4. Decision to Extend the Lower Protocol:
+
+The decision to extend the Class Information Protocol rather than encapsulating all new functionality within the Course Registration Protocol was driven by the desire to maintain a modular and scalable architecture. By enhancing the lower protocol, we ensure that the foundation supports richer data elements essential for both basic information retrieval and the complex requirements of course registration, promoting code reuse and system coherence.
+
+This approach mirrors the design philosophy of well-established protocol stacks like TCP/IP, where each layer builds upon the capabilities of the lower layers to introduce new functionalities while preserving the core functionalities intact.
+
+5. Process Flow and State Management using socket like in Programming Part:
+Client: A student's computing device initiating the registration process.
+Server: The institution's centralized server, designed to process registration requests with high availability and reliability.
+
+- Initial Connection: A persistent socket connection is established between the client and server, ensuring a stable communication channel.
+- PDU Transmission: The client crafts and sends a detailed Course Registration PDU to the server, encapsulating all necessary registration information.
+- Server Reception: Upon receiving the PDU, the server parses and processes the contained data, evaluating course availability, prerequisites, and section capacity.
+- Request Processing: The server employs advanced algorithms to assess the request, considering real-time seat counts, prerequisite validation through an expanded academic record check, and override request handling based on a - prioritized queue system.
+- Response Formulation: A comprehensive response is generated, detailing the registration outcome, including successful enrollment, waitlist placement, or the specifics of any encountered issues.
+- Closure: The connection is gracefully terminated post-response, ensuring a clean end to the transaction.
