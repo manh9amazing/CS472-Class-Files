@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
+#include <time.h>
 
 #define  BUFF_SZ            1024
 #define  MAX_REOPEN_TRIES   5
@@ -55,7 +56,12 @@ int reopen_socket(const char *host, uint16_t port) {
     //          5. If we fall out of the loop, we are unable to connect, return
     //             -1 to indicate a failure. 
     //----------------------------------------------------------------------------
-
+    for (int tries = 0; tries < MAX_REOPEN_TRIES; tries++) {
+        sock = socket_connect(host, port);
+        if (sock >= 0) {
+            return sock;
+        }
+    }
     
     return -1;
 }
@@ -96,9 +102,12 @@ int submit_request(int sock, const char *host, uint16_t port, char *resource){
         //  2. Assuming you got a valid socket, reissue the send again
         //     sent_bytes = send(sock, req, send_sz,0);
         //----------------------------------------------------------------------------
-        
-        return -1;  //remove this line of code, i just want this to compile so the
-                    //block of code needs at least one line
+        sock = reopen_socket(host, port);
+        if (sock < 0) {
+            return sock; 
+        }
+
+        sent_bytes = send(sock, req, send_sz, 0);
     }
 
     //This should not happen, but just checking if we didnt send everything and 
@@ -124,6 +133,24 @@ int submit_request(int sock, const char *host, uint16_t port, char *resource){
         return -1;
     }
 
+    // uncomment this to test Extra Credit solution, 
+    // int * hd = malloc(sizeof(int));
+    // int * ct = malloc(sizeof(int));
+    // int * hdn = malloc(sizeof(int));
+    // int * ctn = malloc(sizeof(int));
+
+    // process_http_header(recv_buff, bytes_recvd, hd, ct);
+    // fprintf(stdout, "ORIG HEADER LEN: %d\n", *hd); 
+    // fprintf(stdout, "ORIG CONTENT LEN: %d\n", *ct); 
+    // process_http_header_single_pass(recv_buff, bytes_recvd, hdn, ctn);
+    // fprintf(stdout, "NEW HEADER LEN: %d\n", *hdn); 
+    // fprintf(stdout, "NEW CONTENT LEN: %d\n", *ctn); 
+
+    // free(hd);
+    // free(ct);
+    // free(hdn);
+    // free(ctn);
+
     //remember the first receive we just did has the HTTP header, and likely some body
     //data.  We need to determine how much data we expect
 
@@ -137,8 +164,12 @@ int submit_request(int sock, const char *host, uint16_t port, char *resource){
     //          b. return -1 to exit this function
     //--------------------------------------------------------------------------------
     int header_len = 0;     //change this to get the header len as per the directions above
+    header_len = get_http_header_len(recv_buff, bytes_recvd);
+    if (header_len < 0) {
+        close(sock);
+        return -1;
+    }
     
-
     //--------------------------------------------------------------------------------
     //TODO:  Get the conetent len
     //
@@ -149,6 +180,7 @@ int submit_request(int sock, const char *host, uint16_t port, char *resource){
     // is no body, AKA, content_len is zero;
     //--------------------------------------------------------------------------------
     int content_len = 0;    //Change this to get the content length
+    content_len = get_http_content_len(recv_buff, header_len);
 
     //--------------------------------------------------------------------------------
     // TODO:  Make sure you understand the calculations below
@@ -157,8 +189,23 @@ int submit_request(int sock, const char *host, uint16_t port, char *resource){
     // what the following 2 lines of code do to track the amount of data received
     // from the server
     //
-    // YOUR ANSWER:  <START-YOUR-RESPONSE-HERE>
+    // MY ANSWER:
     //
+    // The calculation of initial_data and bytes_remaining serves to manage the reception
+    // of the HTTP response data correctly, considering the HTTP header and body are received together 
+    // and we receive one chunk/part of data in one receive. This ensures that the client does not prematurely
+    // close the connection or attempt to read beyond the end of the current response.
+    // 
+    // `initial_data = bytes_recvd - header_len;` calculates the amount of data received
+    // in the first recv() call that actually belongs to the content (body) of the response.
+    // This is done by subtracting the length of the HTTP header from the total bytes received.
+    //
+    // `bytes_remaining = content_len - initial_data;` determines how much more content (body)
+    // data we expect to receive based on the Content-Length header of the response. content_len
+    // is the total length of the body as reported by the server, and initial_data is how much
+    // of that body we've already received. Subtracting these gives us the remaining amount of
+    // body data we need to read from the socket.
+
     //--------------------------------------------------------------------------------
     int initial_data =  bytes_recvd - header_len;
     int bytes_remaining = content_len - initial_data;
@@ -177,18 +224,25 @@ int submit_request(int sock, const char *host, uint16_t port, char *resource){
         //      a. close the socket (sock)
         //      b. return -1 to indicate an error
         //-----------------------------------------------------------------------------
-        bytes_recvd = 0; // replace with a valid recv(...); call
+        bytes_recvd = recv(sock, recv_buff, sizeof(recv_buff), 0);
+        if (bytes_recvd < 0) {
+            perror("recv failed");
+            close(sock);
+            return -1;
+        }
         
         //You can uncomment out the fprintf() calls below to see what is going on
 
-        //fprintf(stdout, "%.*s", bytes_recvd, recv_buff);
+        fprintf(stdout, "%.*s", bytes_recvd, recv_buff);
         total_bytes += bytes_recvd;
-        //fprintf(stdout, "remaining %d, received %d\n", bytes_remaining, bytes_recvd);
+        fprintf(stdout, "remaining %d, received %d\n", bytes_remaining, bytes_recvd);
         bytes_remaining -= bytes_recvd;
     }
 
     fprintf(stdout, "\n\nOK\n");
-    fprintf(stdout, "TOTAL BYTES: %d\n", total_bytes);
+    fprintf(stdout, "TOTAL BYTES: %d\n", total_bytes); // If followed TODO, the bytes here is total bytes received after first receive
+    fprintf(stdout, "CONTENT LENGTH: %d\n", total_bytes + initial_data); 
+    // To know total bytes received from start to end, it is just total_bytes + initial data or in most case content_len
 
     //processed the request OK, return the socket, in case we had to reopen
     //so that it can be used in the next request
@@ -199,13 +253,29 @@ int submit_request(int sock, const char *host, uint16_t port, char *resource){
     // You dont have any code to change, but explain why this function, if it gets to this
     // point returns an active socket.
     //
-    // YOUR ANSWER:  <START-YOUR-RESPONSE-HERE>
+    // MY ANSWER:
     //
+    // This function returns an active socket at the end of processing a request successfully
+    // to allow for the re-use of the same TCP connection for subsequent HTTP requests. This
+    // behavior is in line with the HTTP/1.1 specification, which encourages the use of persistent
+    // connections to reduce the overhead (TCP handshake overhead and slow start phase for each new request) 
+    // of establishing new connections for each request.
+    //
+    // Again, if the function gets to this point, it means the request was processed without errors,
+    // and the connection remains open and in a good state. Returning the socket allows the
+    // `main` function or subsequent calls to `submit_request` to use this persistent connection
+    // for further requests. This approach aligns with the `Connection: Keep-Alive` header's
+    // intent, keeping the connection alive for multiple HTTP requests/responses, thereby
+    // improving the efficiency of network resource utilization. And in the end, close the socket with
+    // `server_disconnect` in `main`
+
     //--------------------------------------------------------------------------------
     return sock;
 }
 
 int main(int argc, char *argv[]){
+    clock_t start_time = clock();
+
     int sock;
 
     const char *host = DEFAULT_HOST;
@@ -239,4 +309,9 @@ int main(int argc, char *argv[]){
     }
 
     server_disconnect(sock);
+
+    clock_t end_time = clock();
+    double elapsed_time = (double)(end_time - start_time) / CLOCKS_PER_SEC;
+
+    printf("Elapsed time: %.5f seconds\n", elapsed_time);
 }

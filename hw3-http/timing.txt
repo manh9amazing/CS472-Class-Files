@@ -1,0 +1,40 @@
+After running the code to measure runtime of client-cc and client-ka (running around 50 times). Here is the result:
+
+client-cc (Connection: Close)
+runtime making 1 request: 0.00116 - 0.00158
+runtime making 3 requests: 0.00283 - 0.00326
+
+client-ka (Connection: Keep-Alive)
+runtime making 1 request: 0.00090 - 0.00103
+runtime making 3 requests: 0.00110 - 0.00151
+
+We can see that Connection: Keep-Alive demonstrates faster response times compared to the Connection: Close version.
+This aligns with underlying HTTP/1.1 protocol optimizations and the nature of TCP connections. 
+
+1. Connection Establishment Overhead
+- Connection: Close Behavior: For each HTTP request, a new TCP connection is established. This involves the three-way handshake process 
+to set up the connection before any data can be sent. Once the request is served, the connection is terminated, which involves a four-way handshake. 
+This process incurs a significant overhead, especially in environments with high network latency.
+
+- Connection: Keep-Alive Optimization: The Connection: Keep-Alive header allows the client and server to reuse an established TCP connection for multiple HTTP requests 
+and responses, avoiding the overhead of setting up and tearing down the connection for each request. This significantly reduces the total time taken to 
+process multiple requests, as the time-consuming TCP handshake is done only once at the beginning.
+
+2. Network Latency and Throughput
+- Reduced Latency: The reduction in connection setup and teardown operations directly translates to lower overall network latency for the Connection: Keep-Alive version. 
+Since the connection remains open, subsequent requests can be sent as soon as the previous response is received, without waiting for new TCP connections to be established.
+
+- Improved Throughput: By keeping the connection open, TCP's slow start mechanism, which gradually increases the data transmission rate until it finds the network's capacity, 
+is more efficiently utilized. The Connection: Close model resets this mechanism with each new connection, potentially leading to underutilization of available network bandwidth.
+
+3. Server and Client Resources
+- Resource Utilization: Persistent connections reduce the number of TCP connections that need to be managed simultaneously by both client and server, which can lead to 
+more efficient use of resources. Each new connection requires memory and processing power to manage, and by reusing connections, the Connection: Keep-Alive approach can lead to 
+lower resource consumption and better scalability for handling multiple requests.
+
+EX. Expectation
+The advantages of Connection: Keep-Alive are most pronounced in use cases involving multiple requests to the same server within a short period. 
+I have test 10-20 requests to cnn.com
+client-cc (Connection: Close) have runtime range from 0.00830 - 0.01000
+client-ka (Connection: Keep-Alive) have runtime range from 0.00412 - 0.00531
+Which proves our prediction to be true.

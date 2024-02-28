@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
+#include <time.h>
 
 #define  BUFF_SZ 1024
 
@@ -32,7 +33,8 @@ void print_usage(char *exe_name){
 
 int process_request(const char *host, uint16_t port, char *resource){
     int sock;
-    int total_bytes;
+    int total_bytes = 0;
+    ssize_t bytes_sent, bytes_recvd = 0;
 
     sock = socket_connect(host, port);
     if(sock < 0) return sock;
@@ -57,11 +59,34 @@ int process_request(const char *host, uint16_t port, char *resource){
     //    accumulate all of the data received and return this value. 
     //---------------------------------------------------------------------------------
 
+    char *request = generate_cc_request(host, port, resource);
+
+    size_t request_length = strlen(request);
+    bytes_sent = send(sock, request, request_length, 0);
+    if(bytes_sent < 0){
+        perror("send failed");
+        close(sock);
+        return -1;
+    }
+
+    while((bytes_recvd = recv(sock, recv_buff, BUFF_SZ, 0)) > 0){
+        printf("%.*s", (int)bytes_recvd, recv_buff); // Print received data
+        total_bytes += bytes_recvd;
+    }
+
+    if(bytes_recvd < 0){
+        perror("recv failed");
+        close(sock);
+        return -1;
+    }
+
     close(sock);
     return total_bytes;
 }
 
 int main(int argc, char *argv[]){
+    clock_t start_time = clock();
+
     int sock;
 
     const char *host = DEFAULT_HOST;
@@ -91,4 +116,9 @@ int main(int argc, char *argv[]){
             process_request(host, port, resource);
         }
     }
+
+    clock_t end_time = clock();
+    double elapsed_time = (double)(end_time - start_time) / CLOCKS_PER_SEC;
+
+    printf("Elapsed time: %.5f seconds\n", elapsed_time);
 }
