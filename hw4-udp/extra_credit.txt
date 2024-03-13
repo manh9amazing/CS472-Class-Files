@@ -1,7 +1,6 @@
-My attempt for first question is to change dpsend
+A. My attempt for first question (retries) is to change dpsend
 The basic idea is to wait a bit of time before trying to send again (after sending fails)
 We will try until running out of retry attempts
-I am still testing the code on my end so I have not replace the code in du-proto.c yet
 
 #define MAX_RETRY_ATTEMPTS 5
 #define RETRY_TIMEOUT_MS 2000 // 2 seconds
@@ -34,3 +33,68 @@ int dpsend(dp_connp dp, void *sbuff, int sbuff_sz) {
 
     return totalSentBytes;
 }
+I did attempt to do multiple tries for recv as well but it is still in progress. dprand() can be used to randomly sending error or sleep the connection.
+
+B. For the second question (check for mismatched sequence number). An easy way to test mismatch sequence number is to add one more data field to dp connection. Something like this:
+
+typedef struct dp_connection {
+    unsigned int expectedSeqNum;  // Expected sequence number for validation. This is added field. others unchanged
+} dp_connection;
+
+Then, in dprecvdgram(), add the following lines:
+
+    // Sequence number validation
+    if (inPdu.seqnum != dp->expectedSeqNum) {
+        printf("Unexpected sequence number. Expected: %u, Received: %u\n", dp->expectedSeqNum, inPdu.seqnum);
+        // Handle unexpected mismatched sequence number
+        return DP_ERROR_SEQUENCE; // Assume DP_ERROR_SEQUENCE is defined as an error code for sequence mismatch
+    }
+
+    // Update the expected sequence number for the next packet
+    dp->expectedSeqNum = inPdu.seqnum + 1;
+Basically, we gradually keep track of expected sequence number and compare it to sequence number we get and return error if needed
+
+C. My solution for third question (timeout connection) is to use setsockopt()
+Here is one helper function that I am playing around with:
+
+void setSocketTimeout(int socket_fd) {
+    struct timeval timeout;
+    timeout.tv_sec = 10;  // 10 seconds
+    timeout.tv_usec = 0;  // 0 microseconds
+
+    if (setsockopt(socket_fd, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(timeout)) < 0) {
+        perror("setsockopt failed");
+    }
+}
+Just add setSocketTimeout(*sock); in dpServerInit() and dpClientInit(), after the socket creation, then the socket is configured to have timeout.
+We can just timeout react to mostly anywhere. (Assume that I have added code DP_TIMEOUT for timeout). 
+I add some code to dprecvraw to react to the timeout error
+
+static int dprecvraw(dp_connp dp, void *buff, int buff_sz) {
+    int bytes = recvfrom(dp->udp_sock, (char *)buff, buff_sz,  
+                         MSG_WAITALL, (struct sockaddr *)&(dp->outSockAddr.addr),
+                         &(dp->outSockAddr.len));
+
+    if (bytes < 0) {
+        if (errno == EWOULDBLOCK || errno == EAGAIN) {
+            printf("Receive timed out\n");
+            return DP_TIMEOUT; // Assume DP_TIMEOUT is defined as an error code for timeout
+        } else {
+            perror("dprecv: received error from recvfrom()");
+            return -1;
+        }
+    }
+
+    dp->outSockAddr.isAddrInit = true;
+    return bytes;
+}
+
+Have not thoroughly tried this, you can catch DP_TIMEOUT error to do post-process timeout error. Something like:
+int rcvLen = dprecvraw(dp, _dpBuffer, sizeof(_dpBuffer));
+if (rcvLen == DP_TIMEOUT) {
+    // Handle timeout: currently I just try logging out error, maybe I can try RETRY logic here
+}
+
+
+Above is my attempts for questions for Extra Credit
+Note: to keep the code running well and not messed up with experimented feature. I did not replace code here with code in du-proto.c.
