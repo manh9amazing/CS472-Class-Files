@@ -1,0 +1,36 @@
+My attempt for first question is to change dpsend
+The basic idea is to wait a bit of time before trying to send again (after sending fails)
+We will try until running out of retry attempts
+I am still testing the code on my end so I have not replace the code in du-proto.c yet
+
+#define MAX_RETRY_ATTEMPTS 5
+#define RETRY_TIMEOUT_MS 2000 // 2 seconds
+
+int dpsend(dp_connp dp, void *sbuff, int sbuff_sz) {
+    int totalAttempts = 0;
+    int totalSentBytes = 0;
+    char *sptr = (char *)sbuff;
+    int remainingBytes = sbuff_sz;
+    
+    while (remainingBytes > 0 && totalAttempts < MAX_RETRY_ATTEMPTS) {
+        int bytesSent = dpsenddgram(dp, sptr, remainingBytes);
+        if (bytesSent > 0) {
+            // Successfully sent data, prepare for next segment if any
+            sptr += bytesSent;
+            remainingBytes -= bytesSent;
+            totalSentBytes += bytesSent;
+            totalAttempts = 0; // Reset attempts for the next segment
+        } else {
+            // Failed to send data, retry
+            totalAttempts++;
+            usleep(RETRY_TIMEOUT_MS * 1000); // Wait before retrying
+        }
+    }
+
+    if (totalAttempts == MAX_RETRY_ATTEMPTS) {
+        printf("Failed to send data after %d attempts.\n", MAX_RETRY_ATTEMPTS);
+        return -1; // Indicate failure after max attempts
+    }
+
+    return totalSentBytes;
+}
