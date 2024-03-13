@@ -98,3 +98,39 @@ static int dpsendraw(dp_connp dp, void *sbuff, int sbuff_sz);
 static int dprecvraw(dp_connp dp, void *buff, int buff_sz);
 static int dprecvdgram(dp_connp dp, void *buff, int buff_sz);
 static int dpsenddgram(dp_connp dp, void *sbuff, int sbuff_sz);
+
+// My defined improved PDU
+
+typedef enum {
+    FE_FILE_SEND = 0, // Initiating file send
+    FE_FILE_ACK,      // Acknowledging file receipt
+    FE_FILE_ERROR,    // Reporting an error
+    FE_FILE_CLOSE     // Gracefully closing file transfer
+} FEMessageType;
+
+// Define error codes for file exchange protocol
+typedef enum {
+    FE_ERR_NONE = 0,          // No error
+    FE_ERR_FILE_NOT_FOUND,    // File not found
+    FE_ERR_ACCESS_DENIED,     // Access denied
+    FE_ERR_UNKNOWN = 99       // Unknown error
+} FEErrorCode;
+
+// Define status codes for sending/receiving data
+typedef enum {
+    FE_STATUS_SUCCESS = 0,    // Success
+    FE_STATUS_PENDING,        // Data pending
+    FE_STATUS_FAILED          // Failed to send/receive
+} FEStatus;
+
+// Protocol Data Unit for du-ftp
+typedef struct {
+    uint32_t proto_ver;    // Protocol version
+    FEMessageType mtype;   // Message type
+    uint32_t seqnum;       // Sequence number
+    uint32_t dgram_sz;     // Datagram size, could be part of the file data size
+    FEErrorCode err_num;   // Error number, for FE_FILE_ERROR
+    char errorMessage[256];// Detailed error message for FEErrorCode
+    FEStatus status;       // Status of sending/receiving data
+    char fileName[256];    // File name being transferred
+} FE_PDU;
