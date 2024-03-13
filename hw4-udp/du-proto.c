@@ -33,7 +33,6 @@ int  dpmaxdgram(){
     return DP_MAX_BUFF_SZ;
 }
 
-
 dp_connp dpServerInit(int port) {
     struct sockaddr_in *servaddr;
     int *sock;
@@ -219,7 +218,7 @@ static int dprecvraw(dp_connp dp, void *buff, int buff_sz){
     }
 
     bytes = recvfrom(dp->udp_sock, (char *)buff, buff_sz,  
-                MSG_WAITALL, ( struct sockaddr *) &(dp->outSockAddr.addr), 
+                MSG_WAITALL, ( struct sockaddr *) &(dp->outSockAddr.addr),
                 &(dp->outSockAddr.len)); 
 
     if (bytes < 0) {
@@ -230,7 +229,7 @@ static int dprecvraw(dp_connp dp, void *buff, int buff_sz){
 
     //some helper code if you want to do debugging
     if (bytes > sizeof(dp_pdu)){
-        if(false) {                         //just diabling for now
+        if(false) {                         //just diabling for now 
             dp_pdu *inPdu = buff;
             char * payload = (char *)buff + sizeof(dp_pdu);
             printf("DATA : %.*s\n", inPdu->dgram_sz , payload); 
