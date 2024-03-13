@@ -118,18 +118,34 @@ dp_connp dpClientInit(char *addr, int port) {
 
 
 int dprecv(dp_connp dp, void *buff, int buff_sz){
+    int totalReceived = 0;
+    char *rPtr = (char *)buff;
+    _Bool isFragment;
 
-    dp_pdu *inPdu;
-    int rcvLen = dprecvdgram(dp, _dpBuffer, sizeof(_dpBuffer));
+    do {
+        int amount_received = dprecvdgram(dp, _dpBuffer, sizeof(_dpBuffer));
+        
+        if(amount_received == DP_CONNECTION_CLOSED)
+            return DP_CONNECTION_CLOSED;
 
-    if(rcvLen == DP_CONNECTION_CLOSED)
-        return DP_CONNECTION_CLOSED;
 
-    inPdu = (dp_pdu *)_dpBuffer;
-    if(rcvLen > sizeof(dp_pdu))
-        memcpy(buff, (_dpBuffer+sizeof(dp_pdu)), inPdu->dgram_sz);
+        // Extracting the PDU and data from the received buffer
+        dp_pdu *pduPtr = (dp_pdu *)_dpBuffer;
+        char *dataPtr = _dpBuffer + sizeof(dp_pdu);
 
-    return inPdu->dgram_sz;
+        int dataAmount = amount_received - sizeof(dp_pdu);
+        // Ensure not to exceed the provided buffer size
+        int copyAmount = (totalReceived + dataAmount > buff_sz) ? (buff_sz - totalReceived) : dataAmount;
+
+        memcpy(rPtr, dataPtr, copyAmount);
+        rPtr += copyAmount;
+        totalReceived += copyAmount;
+
+        // Check if the received message is a fragment
+        isFragment = IS_MT_FRAGMENT(pduPtr->mtype);
+    } while (isFragment); // Continue if it's a fragment and buffer is not full
+
+    return totalReceived;
 }
 
 
@@ -183,6 +199,15 @@ static int dprecvdgram(dp_connp dp, void *buff, int buff_sz){
             return DP_ERROR_PROTOCOL;
     }
 
+    _Bool isFragment = IS_MT_FRAGMENT(inPdu.mtype);
+
+    if (isFragment){
+        outPdu.mtype = DP_MT_SNDFRAGACK;
+        actSndSz = dpsendraw(dp, &outPdu, sizeof(dp_pdu));
+        if (actSndSz != sizeof(dp_pdu))
+            return DP_ERROR_PROTOCOL;
+        return bytesIn;
+    }
 
     switch(inPdu.mtype){
         case DP_MT_SND:
@@ -229,7 +254,7 @@ static int dprecvraw(dp_connp dp, void *buff, int buff_sz){
 
     //some helper code if you want to do debugging
     if (bytes > sizeof(dp_pdu)){
-        if(false) {                         //just diabling for now 
+        if(true) {                         //just diabling for now 
             dp_pdu *inPdu = buff;
             char * payload = (char *)buff + sizeof(dp_pdu);
             printf("DATA : %.*s\n", inPdu->dgram_sz , payload); 
@@ -244,16 +269,24 @@ static int dprecvraw(dp_connp dp, void *buff, int buff_sz){
 }
 
 int dpsend(dp_connp dp, void *sbuff, int sbuff_sz){
+    printf("BUFF SIZE HELLO: %d \n", sbuff_sz);
 
+    char *sptr = (char *)sbuff;
+    int totalSentBytes = 0;
+    int remainingBytes = sbuff_sz;
 
-    //For now, we will not be able to send larger than the biggest datagram
-    if(sbuff_sz > dpmaxdgram()) {
-        return DP_BUFF_UNDERSIZED;
+    while (remainingBytes > 0) {
+        int bytesSent = dpsenddgram(dp, sptr, remainingBytes);
+        if (bytesSent <= 0) {
+            // Handle error
+            return -1;
+        }
+        sptr += bytesSent;
+        remainingBytes -= bytesSent;
+        totalSentBytes += bytesSent;
     }
 
-    int sndSz = dpsenddgram(dp, sbuff, sbuff_sz);
-
-    return sndSz;
+    return totalSentBytes;
 }
 
 static int dpsenddgram(dp_connp dp, void *sbuff, int sbuff_sz){
@@ -264,18 +297,19 @@ static int dpsenddgram(dp_connp dp, void *sbuff, int sbuff_sz){
         return DP_ERROR_GENERAL;
     }
 
-    if(sbuff_sz > DP_MAX_BUFF_SZ)
-        return DP_ERROR_GENERAL;
-
     //Build the PDU and out buffer
     dp_pdu *outPdu = (dp_pdu *)_dpBuffer;
-    int    sndSz = sbuff_sz;
     outPdu->proto_ver = DP_PROTO_VER_1;
-    outPdu->mtype = DP_MT_SND;
-    outPdu->dgram_sz = sndSz;
     outPdu->seqnum = dp->seqNum;
+    int actualSendSize = sbuff_sz > DP_MAX_BUFF_SZ ? DP_MAX_BUFF_SZ : sbuff_sz;
+    if (sbuff_sz > DP_MAX_BUFF_SZ) {
+        outPdu->mtype = DP_MT_SNDFRAG; // Indicating this is a fragment
+    } else {
+        outPdu->mtype = DP_MT_SND; // A complete send, not fragmented
+    }
+    outPdu->dgram_sz = actualSendSize;
 
-    memcpy((_dpBuffer + sizeof(dp_pdu)), sbuff, sndSz);
+    memcpy((_dpBuffer + sizeof(dp_pdu)), sbuff, actualSendSize);
 
     int totalSendSz = outPdu->dgram_sz + sizeof(dp_pdu);
     bytesOut = dpsendraw(dp, _dpBuffer, totalSendSz);
@@ -293,7 +327,7 @@ static int dpsenddgram(dp_connp dp, void *sbuff, int sbuff_sz){
     //need to get an ack
     dp_pdu inPdu = {0};
     int bytesIn = dprecvraw(dp, &inPdu, sizeof(dp_pdu));
-    if ((bytesIn < sizeof(dp_pdu)) && (inPdu.mtype != DP_MT_SNDACK)){
+    if ((bytesIn < sizeof(dp_pdu)) && (inPdu.mtype != DP_MT_SNDACK)){ //might err
         printf("Expected SND/ACK but got a different mtype %d\n", inPdu.mtype);
     }
 
@@ -477,6 +511,10 @@ static char * pdu_msg_to_string(dp_pdu *pdu) {
             return "CONNECT/ACK";    
         case DP_MT_CLOSEACK:
             return "CLOSE/ACK";
+        case DP_MT_SNDFRAG:
+            return "SEND FRAGMENT";
+        case DP_MT_SNDFRAGACK:
+            return "SEND FRAGMENT ACK";
         default:
             return "***UNKNOWN***";  
     }
