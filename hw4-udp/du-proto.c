@@ -269,7 +269,7 @@ static int dprecvraw(dp_connp dp, void *buff, int buff_sz){
 }
 
 int dpsend(dp_connp dp, void *sbuff, int sbuff_sz){
-    printf("BUFF SIZE HELLO: %d \n", sbuff_sz);
+    // printf("BUFF SIZE HELLO: %d \n", sbuff_sz);
 
     char *sptr = (char *)sbuff;
     int totalSentBytes = 0;
